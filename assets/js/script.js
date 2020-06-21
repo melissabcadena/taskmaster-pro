@@ -47,6 +47,109 @@ var saveTasks = function() {
   localStorage.setItem("tasks", JSON.stringify(tasks));
 };
 
+var auditTask = function(taskEl) {
+  var date = $(taskEl).find("span").text().trim();
+
+  // convert to moment object at 5:00 pm
+  var time = moment(date, "L").set("hour", 17);
+
+  // remove any old classes from element
+  $(taskEl).removeClass("list-group-item-warning list-group-item-danger")
+
+  // apply new class if task is near/over due date
+  if (moment().isAfter(time)) {
+    $(taskEl).addClass("list-group-item-danger");
+  }
+  else if (Math.abs(moment().diff(time, "days")) <= 2) {
+    $(taskEl).addClass("list-group-item-warning");
+  }
+};
+
+// make columns sortable
+$(".card .list-group").sortable({
+  connectWith: $(".card .list-group"),
+  scroll: false,
+  tolerance: "pointer",
+  helper: "clone",
+  activate: function(event) {
+    $(this).addClass("dropover");
+    $('.bottom-trash').addClass('bottom-trash-drag');
+  },
+  deactivate: function(event) {
+    $(this).removeClass("dropover")
+    $('bottom-trash').removeClass('bottom-trash-drag');
+  },
+  over: function (event) {
+    $(event.target).addClass("dropover-active")
+  },
+  out: function(event) {
+    $(event.target).removeClass("dropover-active")
+  },
+  update: function(event) {
+    // array to store the task data in
+    var tempArr = [];
+
+    // loop over current set of children in sortable list
+    $(this).children().each(function() {
+      // saves values in temp array
+      tempArr.push({
+        text: $(this)
+          .find("p")
+          .text()
+          .trim(),
+        date: $(this)
+          .find("span")
+          .text()
+          .trim()
+      });
+    });
+        // trim down list's ID to match object property
+        var arrName = $(this)
+        .attr("id")
+        .replace("list-", "");
+    
+        // update array on tasks object and save
+        tasks[arrName] = tempArr;
+        saveTasks();
+      },
+      stop: function(event) {
+        $(this).removeClass("dropover");
+      }
+    });
+
+// make trash droppable
+$("#trash").droppable({
+  accept: ".card .list-group-item",
+  tolerance: "touch",
+  drop: function(event, ui) {
+    ui.draggable.remove();
+    $(".bottom-trash").removeClass("bottom-trash-active");
+  },
+  over: function(event, ui) {
+    $('.bottom-trash').addClass('bottom-trash-active');
+    console.log(ui);
+  },
+  out: function(event, ui) {
+    $("bottom-trash").removeClass('bottom-trash-active');
+  }
+})
+
+$("#modalDueDate").datepicker({
+  minDate:1
+});
+
+// modal was triggered
+$("#task-form-modal").on("show.bs.modal", function() {
+  // clear values
+  $("#modalTaskDescription, #modalDueDate").val("");
+});
+
+// modal is fully visible
+$("#task-form-modal").on("shown.bs.modal", function() {
+  // highlight textarea
+  $("#modalTaskDescription").trigger("focus");
+});
+
 $(".list-group").on("click", "p", function() {
   var text = $(this)
   .text()
@@ -55,9 +158,32 @@ $(".list-group").on("click", "p", function() {
   var textInput = $("<textarea>")
   .addClass("form-control")
   .val(text);
+  
 
   $(this).replaceWith(textInput);
   textInput.trigger("focus");
+});
+
+// save button in modal was clicked
+$("#task-form-modal .btn-save").click(function() {
+  // get form values
+  var taskText = $("#modalTaskDescription").val();
+  var taskDate = $("#modalDueDate").val();
+
+  if (taskText && taskDate) {
+    createTask(taskText, taskDate, "toDo");
+
+    // close modal
+    $("#task-form-modal").modal("hide");
+
+    // save in tasks array
+    tasks.toDo.push({
+      text: taskText,
+      date: taskDate
+    });
+
+    saveTasks();
+  }
 });
 
 $(".list-group").on("blur", "textarea", function() {
@@ -145,8 +271,8 @@ $(".list-group").on("change", "input[type='text']", function() {
     .closest(".list-group-item")
     .index();
   // update task in array and re-save to localstorage
-  // tasks[status][index].date = date;
-  //   saveTasks();
+  tasks[status][index].date = date;
+  saveTasks();
 
   // recreate span element with bootstrap classes
   var taskSpan = $("<span>")
@@ -161,41 +287,6 @@ $(".list-group").on("change", "input[type='text']", function() {
 
 });
 
-
-// modal was triggered
-$("#task-form-modal").on("show.bs.modal", function() {
-  // clear values
-  $("#modalTaskDescription, #modalDueDate").val("");
-});
-
-// modal is fully visible
-$("#task-form-modal").on("shown.bs.modal", function() {
-  // highlight textarea
-  $("#modalTaskDescription").trigger("focus");
-});
-
-// save button in modal was clicked
-$("#task-form-modal .btn-primary").click(function() {
-  // get form values
-  var taskText = $("#modalTaskDescription").val();
-  var taskDate = $("#modalDueDate").val();
-
-  if (taskText && taskDate) {
-    createTask(taskText, taskDate, "toDo");
-
-    // close modal
-    $("#task-form-modal").modal("hide");
-
-    // save in tasks array
-    tasks.toDo.push({
-      text: taskText,
-      date: taskDate
-    });
-
-    saveTasks();
-  }
-});
-
 // remove all tasks
 $("#remove-tasks").on("click", function() {
   for (var key in tasks) {
@@ -205,92 +296,11 @@ $("#remove-tasks").on("click", function() {
   saveTasks();
 });
 
-// make columns sortable
-$(".card .list-group").sortable({
-  connectWith: $(".card .list-group"),
-  scroll: false,
-  tolerance: "pointer",
-  helper: "clone",
-  activate: function(event) {
-    console.log("activate", this);
-  },
-  deactivate: function(event) {
-    console.log("deactivate", this);
-  },
-  over: function (event) {
-    console.log("out", event.target);
-  },
-  update: function(event) {
-    // array to store the task data in
-    var tempArr = [];
-
-    // loop over current set of children in sortable list
-    $(this).children().each(function() {
-      var text = $(this)
-      .find("p")
-      .text()
-      .trim();
-
-      var date = $(this)
-      .find("span")
-      .text()
-      .trim();
-
-      // add task data to the temp array as an object
-      tempArr.push({
-        text: text,
-        date: date
-      });
-    });
-
-    // trim down list's ID to match object property
-    var arrName = $(this)
-    .attr("id")
-    .replace("list-", "");
-
-    // update array on tasks object and save
-    tasks[arrName] = tempArr;
-    saveTasks();
-  }
-});
-
-// make trash droppable
-$("#trash").droppable({
-  accept: ".card .list-group-item",
-  tolerance: "touch",
-  drop: function(event, ui) {
-    console.log("drop");
-    ui.draggable.remove();
-  },
-  over: function(event, ui) {
-    console.log("over");
-  },
-  out: function(event, ui) {
-    console.log("out");
-  }
-})
-
-$("#modalDueDate").datepicker({
-  minDate:1
-});
-
-var auditTask = function(taskEl) {
-  var date = $(taskEl).find("span").text().trim();
-
-  // convert to moment object at 5:00 pm
-  var time = moment(date, "L").set("hour", 17);
-
-  // remove any old classes from element
-  $(taskEl).removeClass("list-group-item-warning list-group-item-danger")
-
-  // apply new class if task is near/over due date
-  if (moment().isAfter(time)) {
-    $(taskEl).addClass("list-group-item-danger");
-  }
-  else if (Math.abs(moment().diff(time, "days")) <= 2) {
-    $(taskEl).addClass("list-group-item-warning");
-  }
-};
+setInterval(function () {
+  $(".card .list-group-item").each(function (el) {
+    auditTask(el);
+  });
+}, 1800000);
 
 
 // load tasks for the first time
